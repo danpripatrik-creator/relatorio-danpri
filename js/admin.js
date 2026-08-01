@@ -25,7 +25,7 @@ const Admin = {
             <div class="admin-name">${c.name || '-'} ${isAdmin ? '<span style="color:var(--gold);font-size:11px">[Admin]</span>' : ''}</div>
             <div class="admin-username">@${c.username}</div>
             <div class="admin-meta">
-              ${!isAdmin && c.meta ? `Meta: ${c.meta.matriculas || 0} mat. | ${Utils.formatCurrency(c.meta.valor || 0)}` : ''}
+              ${!isAdmin && c.meta ? `Meta Franco: ${c.meta.franco?.matriculas || 0} mat. | ${Utils.formatCurrency(c.meta.franco?.valor || 0)} &nbsp;•&nbsp; Meta Morato: ${c.meta.morato?.matriculas || 0} mat. | ${Utils.formatCurrency(c.meta.morato?.valor || 0)}` : ''}
               ${inactive ? ' <span style="color:var(--danger)">— Desativada</span>' : ''}
             </div>
           </div>
@@ -50,8 +50,10 @@ const Admin = {
     document.getElementById('consultora-username').value = '';
     document.getElementById('consultora-senha').value = '';
     document.getElementById('consultora-senha').placeholder = 'Senha obrigatória';
-    document.getElementById('consultora-meta-mat').value = '0';
-    document.getElementById('consultora-meta-val').value = '0';
+    document.getElementById('consultora-meta-mat-franco').value = '0';
+    document.getElementById('consultora-meta-val-franco').value = '0';
+    document.getElementById('consultora-meta-mat-morato').value = '0';
+    document.getElementById('consultora-meta-val-morato').value = '0';
     document.getElementById('modal-consultora').classList.remove('hidden');
   },
 
@@ -64,8 +66,13 @@ const Admin = {
     document.getElementById('consultora-username').value = c.username || '';
     document.getElementById('consultora-senha').value = '';
     document.getElementById('consultora-senha').placeholder = 'Deixe em branco para manter';
-    document.getElementById('consultora-meta-mat').value = (c.meta && c.meta.matriculas) || 0;
-    document.getElementById('consultora-meta-val').value = (c.meta && c.meta.valor) || 0;
+    // Compatível com dados antigos (meta única) — se não houver meta.franco/morato, usa a meta antiga como ponto de partida
+    const legacyMat = (c.meta && c.meta.matriculas) || 0;
+    const legacyVal = (c.meta && c.meta.valor) || 0;
+    document.getElementById('consultora-meta-mat-franco').value = (c.meta?.franco?.matriculas) ?? legacyMat;
+    document.getElementById('consultora-meta-val-franco').value = (c.meta?.franco?.valor) ?? legacyVal;
+    document.getElementById('consultora-meta-mat-morato').value = (c.meta?.morato?.matriculas) ?? 0;
+    document.getElementById('consultora-meta-val-morato').value = (c.meta?.morato?.valor) ?? 0;
     document.getElementById('modal-consultora').classList.remove('hidden');
   },
 
@@ -74,8 +81,10 @@ const Admin = {
     const name = document.getElementById('consultora-nome').value.trim();
     const username = document.getElementById('consultora-username').value.trim();
     const senha = document.getElementById('consultora-senha').value;
-    const metaMat = parseInt(document.getElementById('consultora-meta-mat').value) || 0;
-    const metaVal = parseFloat(document.getElementById('consultora-meta-val').value) || 0;
+    const metaMatFranco = parseInt(document.getElementById('consultora-meta-mat-franco').value) || 0;
+    const metaValFranco = parseFloat(document.getElementById('consultora-meta-val-franco').value) || 0;
+    const metaMatMorato = parseInt(document.getElementById('consultora-meta-mat-morato').value) || 0;
+    const metaValMorato = parseFloat(document.getElementById('consultora-meta-val-morato').value) || 0;
 
     if (!name || !username) { Utils.toast('Nome e usuário são obrigatórios.', 'error'); return; }
 
@@ -90,7 +99,10 @@ const Admin = {
     const data = {
       name,
       username,
-      meta: { matriculas: metaMat, valor: metaVal },
+      meta: {
+        franco: { matriculas: metaMatFranco, valor: metaValFranco },
+        morato: { matriculas: metaMatMorato, valor: metaValMorato }
+      },
       updatedAt: firebase.firestore.FieldValue.serverTimestamp()
     };
 
