@@ -94,18 +94,30 @@ const Limpeza = {
 
   // Botão único e simples: procura duplicados em TODOS os meses (não só um) e já mescla,
   // sem precisar escolher mês nem conferir lista antes — só uma confirmação rápida.
+  // Agrupa por nome "dobrado" (sem acento/caixa) pra "ALESSANDRA" e "Alessandra" contarem
+  // como a mesma pessoa — nomes com capitalização diferente não devem virar duplicidade escondida.
   async autoFixAllDuplicates() {
     Utils.toast('Procurando duplicados em todos os meses...', 'info');
     const snap = await db.collection('reports').get();
+
+    // Carrega o cadastro real de consultoras pra usar o nome certo (capitalização correta) ao mesclar
+    let canonicalByFold = new Map();
+    try {
+      if (window.Importar && typeof Importar.loadConsultants === 'function') {
+        await Importar.loadConsultants();
+        canonicalByFold = Importar.consultantsByFold || new Map();
+      }
+    } catch (e) { /* segue sem canonical, usa o nome que aparecer primeiro */ }
 
     const groups = new Map();
     snap.docs.forEach(d => {
       const data = d.data();
       if (!data.date) return;
-      const nome = data.consultoraNome || data.consultant || '—';
-      const key = `${data.date}__${nome}`;
+      const nomeRaw = data.consultoraNome || data.consultant || '—';
+      const fold = Utils.foldName(nomeRaw);
+      const key = `${data.date}__${fold}`;
       if (!groups.has(key)) groups.set(key, []);
-      groups.get(key).push({ id: d.id, ref: d.ref, data });
+      groups.get(key).push({ id: d.id, ref: d.ref, data, nomeRaw, fold });
     });
 
     const dup = [...groups.entries()].filter(([, docs]) => docs.length > 1);
@@ -114,6 +126,8 @@ const Limpeza = {
       Utils.toast('Nenhum duplicado encontrado. Está tudo certo! 🎉', 'success');
       return;
     }
+
+    this._canonicalByFold = canonicalByFold;
 
     Utils.confirmAction(
       'Corrigir Duplicados Automaticamente',
@@ -129,7 +143,13 @@ const Limpeza = {
 
     try {
       for (const [key, docs] of dup) {
-        const [date, nome] = key.split('__');
+        const fold = key.split('__')[1];
+        const date = docs[0].data.date;
+        // Nome canônico: prioriza o cadastro real; senão, usa o primeiro nome já bem capitalizado do grupo
+        const nome = (this._canonicalByFold && this._canonicalByFold.get(fold))
+          || docs.map(d => d.nomeRaw).find(n => n && n[0] === n[0].toUpperCase() && n.slice(1) === n.slice(1).toLowerCase())
+          || docs[0].nomeRaw;
+
         const mergedFranco = {}; const mergedMorato = {};
         fields.forEach(f => {
           mergedFranco[f] = Math.max(...docs.map(d => (d.data.franco || {})[f] || 0));
