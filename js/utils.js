@@ -183,6 +183,15 @@ const Utils = {
     XLSX.writeFile(wb, filename);
   },
 
+  // Remove acentos, baixa a caixa e tira espaços extras — usado pra comparar nomes
+  // vindos da planilha (que podem estar em qualquer caixa/acentuação) com o cadastro real.
+  foldName(raw) {
+    if (!raw) return '';
+    return String(raw)
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase().trim().replace(/\s+/g, ' ');
+  },
+
   normalizeConsultantName(raw) {
     if (!raw) return raw;
     const s = String(raw).trim().toLowerCase();

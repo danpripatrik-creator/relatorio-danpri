@@ -4,6 +4,33 @@ const Importar = {
   moratoWorkbook: null,
   francoFileName: '',
   moratoFileName: '',
+  consultantsByFold: null, // cache: nome "dobrado" (sem acento/caixa) -> nome real cadastrado
+  unmatchedNames: [],      // nomes da planilha que não bateram com nenhuma consultora cadastrada
+
+  // Busca as consultoras cadastradas no banco (não uma lista fixa) — assim, qualquer
+  // consultora nova adicionada em "Gerenciar Consultoras" já funciona aqui automaticamente.
+  async loadConsultants() {
+    const snap = await db.collection('users').get();
+    const map = new Map();
+    snap.docs.forEach(d => {
+      const u = d.data();
+      if (u.name) map.set(Utils.foldName(u.name), u.name);
+    });
+    this.consultantsByFold = map;
+    return map;
+  },
+
+  // Resolve o nome cru da planilha pro nome exato cadastrado no banco.
+  // Se não achar, mantém o nome da planilha (capitalizado) e registra como "não encontrado" pra avisar o usuário.
+  resolveConsultantName(rawName) {
+    const folded = Utils.foldName(rawName);
+    const known = this.consultantsByFold?.get(folded);
+    if (known) return known;
+
+    const fallback = String(rawName).trim().toLowerCase().replace(/(^|\s)\S/g, c => c.toUpperCase());
+    if (!this.unmatchedNames.includes(fallback)) this.unmatchedNames.push(fallback);
+    return fallback;
+  },
 
   init() {
     // Drop zone clicks
@@ -104,8 +131,9 @@ const Importar = {
     const dateStr = Utils.parseExcelDate(row[0]);
     if (!dateStr) return null;
 
-    const consultoraNome = Utils.normalizeConsultantName(row[4]);
-    if (!consultoraNome) return null;
+    const rawName = row[4];
+    if (!rawName || !String(rawName).trim()) return null;
+    const consultoraNome = this.resolveConsultantName(rawName);
     const valor = parseFloat(String(row[5]).replace(',', '.').replace(/[^\d.]/g, '')) || 0;
     const tipos = Utils.typesFromRow(row);
     const isMatricula = tipos.includes('M');
@@ -175,6 +203,10 @@ const Importar = {
       return;
     }
 
+    // Carrega a lista real de consultoras cadastradas antes de resolver os nomes da planilha
+    this.unmatchedNames = [];
+    await this.loadConsultants();
+
     const rawRows = toImport.map(r => this.rowToRaw(r)).filter(Boolean);
     const aggregated = this.aggregateByDayConsultant(rawRows);
 
@@ -182,11 +214,17 @@ const Importar = {
     const totalVal = aggregated.reduce((s, a) => s + a.val, 0);
     const unidadeLabel = unit === 'franco' ? 'Franco da Rocha' : 'Francisco Morato';
 
+    let msg = `Importar/atualizar ${aggregated.length} dia(s)-consultora de "${sheetName}" para ${unidadeLabel}? ` +
+      `Total: ${totalMat} matrícula(s) — ${Utils.formatCurrency(totalVal)}. ` +
+      `Isso substitui os valores de ${unit === 'franco' ? 'Franco' : 'Morato'} já gravados nesses dias (não duplica).`;
+
+    if (this.unmatchedNames.length) {
+      msg += ` ⚠️ Nome(s) na planilha sem cadastro em "Gerenciar Consultoras": ${this.unmatchedNames.join(', ')}. Serão importados assim mesmo, mas cadastre essas consultoras pra elas aparecerem certinho nos filtros.`;
+    }
+
     Utils.confirmAction(
       'Confirmar Importação',
-      `Importar/atualizar ${aggregated.length} dia(s)-consultora de "${sheetName}" para ${unidadeLabel}? ` +
-      `Total: ${totalMat} matrícula(s) — ${Utils.formatCurrency(totalVal)}. ` +
-      `Isso substitui os valores de ${unit === 'franco' ? 'Franco' : 'Morato'} já gravados nesses dias (não duplica).`,
+      msg,
       aggregated.length,
       () => this.doImport(aggregated, unit)
     );
