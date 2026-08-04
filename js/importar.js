@@ -128,6 +128,10 @@ const Importar = {
 
   // Um registro "cru" por linha da planilha (uma venda individual)
   rowToRaw(row) {
+    // Algumas planilhas repetem a linha de cabeçalho (Data/ORIGEM/.../VENDEDORA) no início
+    // do bloco de cada consultora — isso não é uma venda, precisa ser ignorado.
+    if (String(row[0]).trim().toLowerCase() === 'data') return null;
+
     const dateStr = Utils.parseExcelDate(row[0]);
     if (!dateStr) return null;
 
@@ -136,7 +140,8 @@ const Importar = {
     const consultoraNome = this.resolveConsultantName(rawName);
     const valor = parseFloat(String(row[5]).replace(',', '.').replace(/[^\d.]/g, '')) || 0;
     const tipos = Utils.typesFromRow(row);
-    const isMatricula = tipos.includes('M');
+    // Matrícula = M (matrícula nova) + AD (adição de categoria) somados juntos, por decisão do Patrik
+    const isMatricula = tipos.includes('M') || tipos.includes('AD');
 
     return { date: dateStr, consultoraNome, valor, isMatricula };
   },
