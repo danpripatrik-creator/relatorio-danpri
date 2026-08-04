@@ -1,5 +1,5 @@
 // Relatório WhatsApp — lê e salva na coleção "reports" (sem coleção "leads")
-// Campos: franco/morato.{ mat, val, lr, la, bal, ind }
+// Campos: franco/morato.{ mat, val, lr, la, bal, ind, lni }
 const Relatorio = {
   _docId: null,       // ID do documento carregado (para upsert)
   _docFranco: {},     // dados franco carregados do Firebase
@@ -50,8 +50,8 @@ const Relatorio = {
     console.log(`[Relatorio] Documentos encontrados: ${snap.size}`);
 
     // Agrega se houver múltiplos documentos (ex.: importados em lotes)
-    let franco = { mat: 0, val: 0, lr: 0, la: 0, bal: 0, ind: 0 };
-    let morato = { mat: 0, val: 0, lr: 0, la: 0, bal: 0, ind: 0 };
+    let franco = { mat: 0, val: 0, lr: 0, la: 0, bal: 0, ind: 0, lni: 0 };
+    let morato = { mat: 0, val: 0, lr: 0, la: 0, bal: 0, ind: 0, lni: 0 };
     this._docId = null;
 
     snap.docs.forEach((d, i) => {
@@ -61,10 +61,10 @@ const Relatorio = {
       const m = data.morato || {};
       franco.mat += f.mat || 0; franco.val += f.val || 0;
       franco.lr  += f.lr  || 0; franco.la  += f.la  || 0;
-      franco.bal += f.bal || 0; franco.ind += f.ind || 0;
+      franco.bal += f.bal || 0; franco.ind += f.ind || 0; franco.lni += f.lni || 0;
       morato.mat += m.mat || 0; morato.val += m.val || 0;
       morato.lr  += m.lr  || 0; morato.la  += m.la  || 0;
-      morato.bal += m.bal || 0; morato.ind += m.ind || 0;
+      morato.bal += m.bal || 0; morato.ind += m.ind || 0; morato.lni += m.lni || 0;
     });
 
     this._docFranco = franco;
@@ -91,6 +91,7 @@ const Relatorio = {
     document.getElementById(`rel-${unit}-la`).value  = data.la  ?? 0;
     document.getElementById(`rel-${unit}-bal`).value = data.bal ?? 0;
     document.getElementById(`rel-${unit}-ind`).value = data.ind ?? 0;
+    document.getElementById(`rel-${unit}-lni`).value = data.lni ?? 0;
   },
 
   _readForm(unit) {
@@ -99,7 +100,7 @@ const Relatorio = {
     return {
       mat: n(`rel-${unit}-mat`), val: nf(`rel-${unit}-val`),
       lr:  n(`rel-${unit}-lr`),  la:  n(`rel-${unit}-la`),
-      bal: n(`rel-${unit}-bal`), ind: n(`rel-${unit}-ind`)
+      bal: n(`rel-${unit}-bal`), ind: n(`rel-${unit}-ind`), lni: n(`rel-${unit}-lni`)
     };
   },
 
@@ -125,6 +126,7 @@ Leads Recebidos Hoje: ${f.lr}
 Leads Antigos Contatados: ${f.la}
 Indicações: ${f.ind}
 Atendimento Balcão: ${f.bal}
+Leads Não Identificados: ${f.lni}
 
 📍 *UNIDADE FRANCISCO MORATO*
 Matrículas Fechadas: ${m.mat}
@@ -133,6 +135,7 @@ Leads Recebidos Hoje: ${m.lr}
 Leads Antigos Contatados: ${m.la}
 Indicações: ${m.ind}
 Atendimento Balcão: ${m.bal}
+Leads Não Identificados: ${m.lni}
 
 🔹 *TOTAL GERAL*
 Total Matrículas: ${f.mat + m.mat}
@@ -141,6 +144,7 @@ Total Leads Recebidos: ${f.lr + m.lr}
 Total Leads Antigos: ${f.la + m.la}
 Total Indicações: ${f.ind + m.ind}
 Total Balcão: ${f.bal + m.bal}
+Total Leads Não Identificados: ${f.lni + m.lni}
 
 _Auto Moto Escola DanPri_ 🏍️`;
 
@@ -177,7 +181,7 @@ _Auto Moto Escola DanPri_ 🏍️`;
     const summary = {
       mat: franco.mat + morato.mat, val: franco.val + morato.val,
       lr:  franco.lr  + morato.lr,  la:  franco.la  + morato.la,
-      bal: franco.bal + morato.bal,  ind: franco.ind + morato.ind
+      bal: franco.bal + morato.bal,  ind: franco.ind + morato.ind, lni: franco.lni + morato.lni
     };
 
     const payload = {

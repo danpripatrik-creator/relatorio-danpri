@@ -151,6 +151,7 @@ const Importar = {
       if (map.LR === undefined && label.startsWith('LEADS HOJE')) map.LR = idx;
       if (map.LA === undefined && label.startsWith('LEADS ANT')) map.LA = idx;
       if (map.BAL === undefined && label.startsWith('BALCAO')) map.BAL = idx;
+      if (map.LNI === undefined && label.startsWith('LEADS NAO ID')) map.LNI = idx;
     });
     return map;
   },
@@ -187,8 +188,9 @@ const Importar = {
     const lr = parseLeadNum(colMap.LR);
     const la = parseLeadNum(colMap.LA);
     const bal = parseLeadNum(colMap.BAL);
+    const lni = parseLeadNum(colMap.LNI);
 
-    return { date: dateStr, consultoraNome, valor, isMatricula, lr, la, bal };
+    return { date: dateStr, consultoraNome, valor, isMatricula, lr, la, bal, lni };
   },
 
   // Agrupa as vendas por dia + consultora — é essa combinação que vira UM documento
@@ -203,7 +205,7 @@ const Importar = {
     rawRows.forEach(r => {
       const key = `${r.date}__${r.consultoraNome}`;
       if (!map.has(key)) {
-        map.set(key, { date: r.date, consultoraNome: r.consultoraNome, mat: 0, val: 0, lr: undefined, la: undefined, bal: undefined });
+        map.set(key, { date: r.date, consultoraNome: r.consultoraNome, mat: 0, val: 0, lr: undefined, la: undefined, bal: undefined, lni: undefined });
       }
       const entry = map.get(key);
       entry.val += r.valor;
@@ -211,6 +213,7 @@ const Importar = {
       if (r.lr !== undefined) entry.lr = Math.max(entry.lr ?? 0, r.lr);
       if (r.la !== undefined) entry.la = Math.max(entry.la ?? 0, r.la);
       if (r.bal !== undefined) entry.bal = Math.max(entry.bal ?? 0, r.bal);
+      if (r.lni !== undefined) entry.lni = Math.max(entry.lni ?? 0, r.lni);
     });
     return [...map.values()];
   },
@@ -322,7 +325,8 @@ const Importar = {
           val: a.val,
           lr:  a.lr  !== undefined ? a.lr  : (prevUnit.lr  ?? 0),
           la:  a.la  !== undefined ? a.la  : (prevUnit.la  ?? 0),
-          bal: a.bal !== undefined ? a.bal : (prevUnit.bal ?? 0)
+          bal: a.bal !== undefined ? a.bal : (prevUnit.bal ?? 0),
+          lni: a.lni !== undefined ? a.lni : (prevUnit.lni ?? 0)
         };
         batch.set(refs[idx], {
           date: a.date,

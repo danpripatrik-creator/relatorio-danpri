@@ -232,12 +232,14 @@ const App = {
       'franco-la':  document.getElementById('venda-franco-la').value,
       'franco-bal': document.getElementById('venda-franco-bal').value,
       'franco-ind': document.getElementById('venda-franco-ind').value,
+      'franco-lni': document.getElementById('venda-franco-lni').value,
       'morato-mat': document.getElementById('venda-morato-mat').value,
       'morato-val': document.getElementById('venda-morato-val').value,
       'morato-lr':  document.getElementById('venda-morato-lr').value,
       'morato-la':  document.getElementById('venda-morato-la').value,
       'morato-bal': document.getElementById('venda-morato-bal').value,
       'morato-ind': document.getElementById('venda-morato-ind').value,
+      'morato-lni': document.getElementById('venda-morato-lni').value,
     });
   },
 

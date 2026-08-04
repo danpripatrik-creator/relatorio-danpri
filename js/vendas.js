@@ -98,6 +98,7 @@ const Vendas = {
     document.getElementById('venda-franco-la').value  = f.la  ?? 0;
     document.getElementById('venda-franco-bal').value = f.bal ?? 0;
     document.getElementById('venda-franco-ind').value = f.ind ?? 0;
+    document.getElementById('venda-franco-lni').value = f.lni ?? 0;
 
     const m = rec.morato || {};
     document.getElementById('venda-morato-mat').value = m.mat ?? 0;
@@ -106,6 +107,7 @@ const Vendas = {
     document.getElementById('venda-morato-la').value  = m.la  ?? 0;
     document.getElementById('venda-morato-bal').value = m.bal ?? 0;
     document.getElementById('venda-morato-ind').value = m.ind ?? 0;
+    document.getElementById('venda-morato-lni').value = m.lni ?? 0;
 
     document.getElementById('modal-nova-venda').classList.remove('hidden');
   },
@@ -135,15 +137,16 @@ const Vendas = {
     const n = k => parseInt(formData[k]) || 0;
     const nf = k => parseFloat(formData[k]) || 0;
 
-    const franco = { mat: n('franco-mat'), val: nf('franco-val'), lr: n('franco-lr'), la: n('franco-la'), bal: n('franco-bal'), ind: n('franco-ind') };
-    const morato = { mat: n('morato-mat'), val: nf('morato-val'), lr: n('morato-lr'), la: n('morato-la'), bal: n('morato-bal'), ind: n('morato-ind') };
+    const franco = { mat: n('franco-mat'), val: nf('franco-val'), lr: n('franco-lr'), la: n('franco-la'), bal: n('franco-bal'), ind: n('franco-ind'), lni: n('franco-lni') };
+    const morato = { mat: n('morato-mat'), val: nf('morato-val'), lr: n('morato-lr'), la: n('morato-la'), bal: n('morato-bal'), ind: n('morato-ind'), lni: n('morato-lni') };
     const summary = {
       mat: franco.mat + morato.mat,
       val: franco.val + morato.val,
       lr:  franco.lr  + morato.lr,
       la:  franco.la  + morato.la,
       bal: franco.bal + morato.bal,
-      ind: franco.ind + morato.ind
+      ind: franco.ind + morato.ind,
+      lni: franco.lni + morato.lni
     };
 
     const doc = {
