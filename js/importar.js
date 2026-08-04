@@ -268,22 +268,31 @@ const Importar = {
     document.getElementById(`btn-import-${unit}`).disabled = true;
 
     let done = 0;
-    const batchSize = 400; // cada item grava 3 campos + merge; margem de segurança sob o limite de 500 do Firestore
+    const batchSize = 200; // agora fazemos 1 leitura + 1 escrita por item, margem maior de segurança
 
     for (let i = 0; i < aggregated.length; i += batchSize) {
       const chunk = aggregated.slice(i, i + batchSize);
+
+      // Lê os documentos que já existem primeiro, pra não perder lr/la/bal/ind
+      // nem os dados da outra unidade já gravados nesse dia/consultora. A chave
+      // ["franco.mat"] com merge:true NÃO atualiza campo aninhado nesse Firestore —
+      // cria um campo solto com ponto no nome. Por isso lemos e reescrevemos o objeto inteiro.
+      const refs = chunk.map(a => db.collection('reports').doc(this.docIdFor(a.date, a.consultoraNome)));
+      const snaps = await Promise.all(refs.map(r => r.get()));
+
       const batch = db.batch();
-      chunk.forEach(a => {
-        const id = this.docIdFor(a.date, a.consultoraNome);
-        const ref = db.collection('reports').doc(id);
-        // merge:true + chaves com ponto = atualiza SÓ mat/val da unidade importada,
-        // sem apagar lr/la/bal/ind nem os dados da outra unidade já gravados nesse dia/consultora.
-        batch.set(ref, {
+      chunk.forEach((a, idx) => {
+        const existing = snaps[idx].exists ? snaps[idx].data() : {};
+        const unitData = {
+          ...(existing[unit] || {}),
+          mat: a.mat,
+          val: a.val
+        };
+        batch.set(refs[idx], {
           date: a.date,
           consultant: a.consultoraNome,
           consultoraNome: a.consultoraNome,
-          [`${unit}.mat`]: a.mat,
-          [`${unit}.val`]: a.val,
+          [unit]: unitData,
           updatedAt: firebase.firestore.FieldValue.serverTimestamp()
         }, { merge: true });
       });
