@@ -118,16 +118,33 @@ const Importar = {
 
   parseSheet(sheet) {
     const raw = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+    // A linha de cabeçalho real (Data|ORIGEM|...|M|RC|RN|...) fica no índice 3 (4ª linha)
+    const headerRow = raw[3] || [];
     // Skip first 3 rows (header), row 4 = column titles (index 3), data from row 5 (index 4)
     const dataRows = raw.slice(4).filter(row => {
       const dateVal = row[0];
       return dateVal !== null && dateVal !== undefined && dateVal !== '';
     });
-    return dataRows;
+    return { dataRows, headerRow };
+  },
+
+  // Descobre em qual coluna cada tipo (M, RC, RN, PT, AP, AD) está, lendo os nomes reais
+  // do cabeçalho — planilhas diferentes (Franco vs Morato) podem ter colunas em posições
+  // diferentes (uma tem "PT", a outra não), então não dá pra assumir índice fixo.
+  buildTypeColumnMap(headerRow) {
+    const map = {};
+    const wanted = ['M', 'RC', 'RN', 'PT', 'AP', 'AD'];
+    headerRow.forEach((cell, idx) => {
+      const label = String(cell || '').trim().toUpperCase();
+      if (wanted.includes(label) && map[label] === undefined) {
+        map[label] = idx;
+      }
+    });
+    return map;
   },
 
   // Um registro "cru" por linha da planilha (uma venda individual)
-  rowToRaw(row) {
+  rowToRaw(row, colMap) {
     // Algumas planilhas repetem a linha de cabeçalho (Data/ORIGEM/.../VENDEDORA) no início
     // do bloco de cada consultora — isso não é uma venda, precisa ser ignorado.
     if (String(row[0]).trim().toLowerCase() === 'data') return null;
@@ -139,9 +156,12 @@ const Importar = {
     if (!rawName || !String(rawName).trim()) return null;
     const consultoraNome = this.resolveConsultantName(rawName);
     const valor = parseFloat(String(row[5]).replace(',', '.').replace(/[^\d.]/g, '')) || 0;
-    const tipos = Utils.typesFromRow(row);
+
+    // Usa a posição real das colunas M e AD (descoberta pelo cabeçalho), não uma posição fixa
+    const isM = colMap.M !== undefined && Utils.isMarked(row[colMap.M]);
+    const isAD = colMap.AD !== undefined && Utils.isMarked(row[colMap.AD]);
     // Matrícula = M (matrícula nova) + AD (adição de categoria) somados juntos, por decisão do Patrik
-    const isMatricula = tipos.includes('M') || tipos.includes('AD');
+    const isMatricula = isM || isAD;
 
     return { date: dateStr, consultoraNome, valor, isMatricula };
   },
@@ -193,11 +213,12 @@ const Importar = {
     const { sheet, sheetName } = this.getSheetForMode(wb, modo, targetDate, targetSheetName);
     if (!sheet) { Utils.toast('Aba não encontrada na planilha.', 'error'); return; }
 
-    const rows = this.parseSheet(sheet);
-    let toImport = rows;
+    const { dataRows, headerRow } = this.parseSheet(sheet);
+    const colMap = this.buildTypeColumnMap(headerRow);
+    let toImport = dataRows;
 
     if (modo === 'dia') {
-      toImport = rows.filter(row => {
+      toImport = dataRows.filter(row => {
         const d = Utils.parseExcelDate(row[0]);
         return d === targetDate;
       });
@@ -212,7 +233,7 @@ const Importar = {
     this.unmatchedNames = [];
     await this.loadConsultants();
 
-    const rawRows = toImport.map(r => this.rowToRaw(r)).filter(Boolean);
+    const rawRows = toImport.map(r => this.rowToRaw(r, colMap)).filter(Boolean);
     const aggregated = this.aggregateByDayConsultant(rawRows);
 
     const totalMat = aggregated.reduce((s, a) => s + a.mat, 0);
@@ -223,6 +244,9 @@ const Importar = {
       `Total: ${totalMat} matrícula(s) — ${Utils.formatCurrency(totalVal)}. ` +
       `Isso substitui os valores de ${unit === 'franco' ? 'Franco' : 'Morato'} já gravados nesses dias (não duplica).`;
 
+    if (colMap.M === undefined) {
+      msg += ` ⚠️ Não encontrei a coluna "M" no cabeçalho dessa aba — verifique se a linha 4 tem os títulos certos.`;
+    }
     if (this.unmatchedNames.length) {
       msg += ` ⚠️ Nome(s) na planilha sem cadastro em "Gerenciar Consultoras": ${this.unmatchedNames.join(', ')}. Serão importados assim mesmo, mas cadastre essas consultoras pra elas aparecerem certinho nos filtros.`;
     }
