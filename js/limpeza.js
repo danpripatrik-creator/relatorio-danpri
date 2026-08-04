@@ -92,8 +92,75 @@ const Limpeza = {
       .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
   },
 
-  // Encontra documentos duplicados (mesma data + mesma consultora) dentro do mês selecionado.
-  // Não apaga nada sozinho — mostra a lista pra você conferir antes de decidir.
+  // Botão único e simples: procura duplicados em TODOS os meses (não só um) e já mescla,
+  // sem precisar escolher mês nem conferir lista antes — só uma confirmação rápida.
+  async autoFixAllDuplicates() {
+    Utils.toast('Procurando duplicados em todos os meses...', 'info');
+    const snap = await db.collection('reports').get();
+
+    const groups = new Map();
+    snap.docs.forEach(d => {
+      const data = d.data();
+      if (!data.date) return;
+      const nome = data.consultoraNome || data.consultant || '—';
+      const key = `${data.date}__${nome}`;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push({ id: d.id, ref: d.ref, data });
+    });
+
+    const dup = [...groups.entries()].filter(([, docs]) => docs.length > 1);
+
+    if (!dup.length) {
+      Utils.toast('Nenhum duplicado encontrado. Está tudo certo! 🎉', 'success');
+      return;
+    }
+
+    Utils.confirmAction(
+      'Corrigir Duplicados Automaticamente',
+      `Encontrei ${dup.length} dia(s)-consultora com mais de um registro. Vou mesclar cada grupo mantendo o MAIOR valor de cada campo (nunca soma) e apagar os documentos extras. Isso é irreversível.`,
+      dup.length,
+      () => this._executeAutoMerge(dup)
+    );
+  },
+
+  async _executeAutoMerge(dup) {
+    const fields = ['mat', 'val', 'lr', 'la', 'bal', 'ind'];
+    let merged = 0, deleted = 0;
+
+    try {
+      for (const [key, docs] of dup) {
+        const [date, nome] = key.split('__');
+        const mergedFranco = {}; const mergedMorato = {};
+        fields.forEach(f => {
+          mergedFranco[f] = Math.max(...docs.map(d => (d.data.franco || {})[f] || 0));
+          mergedMorato[f] = Math.max(...docs.map(d => (d.data.morato || {})[f] || 0));
+        });
+        const summary = {
+          mat: mergedFranco.mat + mergedMorato.mat, val: mergedFranco.val + mergedMorato.val,
+          lr:  mergedFranco.lr  + mergedMorato.lr,  la:  mergedFranco.la  + mergedMorato.la,
+          bal: mergedFranco.bal + mergedMorato.bal, ind: mergedFranco.ind + mergedMorato.ind
+        };
+
+        const detId = `${date}_${this._slugFor(nome)}`;
+        const keepRef = db.collection('reports').doc(detId);
+        const batch = db.batch();
+        batch.set(keepRef, {
+          date, consultant: nome, consultoraNome: nome,
+          franco: mergedFranco, morato: mergedMorato, summary,
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+
+        docs.forEach(d => { if (d.id !== detId) { batch.delete(d.ref); deleted++; } });
+        await batch.commit();
+        merged++;
+      }
+      Utils.toast(`✅ Corrigido! ${merged} grupo(s) mesclados, ${deleted} registro(s) duplicados removidos.`, 'success');
+      if (App.currentPage === 'dashboard') Dashboard.listen(App.currentMonth);
+    } catch (e) {
+      Utils.toast('Erro ao corrigir: ' + e.message, 'error');
+    }
+  },
+
   async initFindDuplicates() {
     const month = document.getElementById('limp-mes-dup').value;
     const { start, end } = Utils.monthDateRange(month);

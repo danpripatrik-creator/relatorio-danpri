@@ -442,6 +442,14 @@
         <div class="alert-warning">
           ⚠️ Atenção! Estas ações são irreversíveis. Os dados apagados não podem ser recuperados.
         </div>
+
+        <div class="limpeza-card" style="border:2px solid var(--gold);margin-bottom:20px">
+          <div class="limpeza-icon">🔧</div>
+          <h3>Corrigir Duplicados Automaticamente</h3>
+          <p>Um clique só: procura em <strong>todos os meses</strong> por dias/consultoras com mais de um registro (ex: lançamento manual antigo + import da planilha) e já mescla, mantendo sempre o maior valor de cada campo — nunca soma dois registros do mesmo dia. Isso não vai mais acontecer daqui pra frente (já corrigimos o app), mas resolve o que já existe.</p>
+          <button class="btn btn-gold btn-full" onclick="Limpeza.autoFixAllDuplicates()">Corrigir Agora</button>
+        </div>
+
         <div class="limpeza-grid">
 
           <div class="limpeza-card">
