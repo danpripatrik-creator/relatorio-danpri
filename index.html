@@ -485,6 +485,22 @@
             <button class="btn btn-danger" onclick="Limpeza.initClear('data')">Verificar e Limpar</button>
           </div>
 
+          <div class="limpeza-card" style="grid-column: 1 / -1">
+            <div class="limpeza-icon">🔁</div>
+            <h3>Encontrar e Mesclar Duplicados</h3>
+            <p>Procura dias/consultoras com mais de um registro no Firestore (ex: um lançamento manual antigo e um importado da planilha) e mostra pra você antes de mesclar. Mantém sempre o maior valor de cada campo — nunca soma dois registros do mesmo dia.</p>
+            <div class="form-group">
+              <label>Mês</label>
+              <select id="limp-mes-dup" class="filter-select"></select>
+            </div>
+            <button class="btn btn-outline" onclick="Limpeza.initFindDuplicates()">Procurar Duplicados</button>
+            <div id="limp-dup-list" style="margin-top:14px;max-height:400px;overflow-y:auto"></div>
+            <div id="limp-dup-actions" class="hidden" style="margin-top:12px">
+              <div id="limp-dup-count" style="color:var(--gold);margin-bottom:8px;font-size:13px"></div>
+              <button class="btn btn-danger" onclick="Limpeza.confirmMergeDuplicates()">Mesclar Todos os Duplicados Encontrados</button>
+            </div>
+          </div>
+
         </div>
       </div>
 

@@ -186,13 +186,20 @@ _Auto Moto Escola DanPri_ 🏍️`;
       updatedAt: firebase.firestore.FieldValue.serverTimestamp()
     };
 
+    // Mesmo esquema de ID determinístico (data + consultora) usado no Importar Planilha
+    // e no Registro de Vendas — evita criar um documento duplicado pro mesmo dia/consultora.
+    const slug = consultantName
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+    const detId = this._docId || `${date}_${slug}`;
+
     try {
       if (this._docId) {
         await db.collection('reports').doc(this._docId).update(payload);
       } else {
         payload.createdAt = firebase.firestore.FieldValue.serverTimestamp();
-        const ref = await db.collection('reports').add(payload);
-        this._docId = ref.id;
+        await db.collection('reports').doc(detId).set(payload, { merge: true });
+        this._docId = detId;
       }
       Utils.toast('Dados salvos no Firebase!', 'success');
     } catch (e) {

@@ -154,13 +154,21 @@ const Vendas = {
       updatedAt: firebase.firestore.FieldValue.serverTimestamp()
     };
 
+    // Mesmo esquema de ID determinístico (data + consultora) usado no Importar Planilha —
+    // assim um lançamento manual e uma importação para o mesmo dia/consultora sempre
+    // caem no mesmo documento, em vez de criar registros duplicados.
+    const slug = (formData.consultoraNome || formData.consultant || '')
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+    const detId = `${formData.date}_${slug}`;
+
     try {
       if (formData.id) {
         await db.collection('reports').doc(formData.id).update(doc);
         Utils.toast('Lançamento atualizado!', 'success');
       } else {
         doc.createdAt = firebase.firestore.FieldValue.serverTimestamp();
-        await db.collection('reports').add(doc);
+        await db.collection('reports').doc(detId).set(doc, { merge: true });
         Utils.toast('Lançamento registrado!', 'success');
       }
       App.closeModal('modal-nova-venda');
