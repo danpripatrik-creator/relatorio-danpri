@@ -99,42 +99,53 @@ const Importar = {
     return dataRows;
   },
 
-  rowToRecord(row, unidade) {
+  // Um registro "cru" por linha da planilha (uma venda individual)
+  rowToRaw(row) {
     const dateStr = Utils.parseExcelDate(row[0]);
     if (!dateStr) return null;
 
     const consultoraNome = Utils.normalizeConsultantName(row[4]);
-    const consultant = Utils.consultantNameToUsername(consultoraNome);
+    if (!consultoraNome) return null;
     const valor = parseFloat(String(row[5]).replace(',', '.').replace(/[^\d.]/g, '')) || 0;
     const tipos = Utils.typesFromRow(row);
+    const isMatricula = tipos.includes('M');
 
-    return {
-      date: dateStr,
-      month: Utils.dateToMonth(dateStr),
-      consultant,
-      consultoraNome,
-      unidade,
-      origem: String(row[1] || '').trim(),
-      plano: String(row[2] || '').trim(),
-      formaPagamento: String(row[3] || '').trim(),
-      valor,
-      tipos,
-      createdAt: firebase.firestore.FieldValue.serverTimestamp()
-    };
+    return { date: dateStr, consultoraNome, valor, isMatricula };
+  },
+
+  // Agrupa as vendas por dia + consultora — é essa combinação que vira UM documento
+  // no Firestore (mesma estrutura usada pelo Registro de Vendas manual: reports.franco / reports.morato = { mat, val }).
+  // "mat" = quantidade de linhas marcadas como "M" (matrícula); "val" = soma de TODAS as vendas do dia (todos os tipos), igual ao "Total DE $" da planilha.
+  aggregateByDayConsultant(rawRows) {
+    const map = new Map();
+    rawRows.forEach(r => {
+      const key = `${r.date}__${r.consultoraNome}`;
+      if (!map.has(key)) {
+        map.set(key, { date: r.date, consultoraNome: r.consultoraNome, mat: 0, val: 0 });
+      }
+      const entry = map.get(key);
+      entry.val += r.valor;
+      if (r.isMatricula) entry.mat += 1;
+    });
+    return [...map.values()];
+  },
+
+  // Gera um ID de documento determinístico (data + consultora), sem acentos/espaços,
+  // pra reimportar o mesmo dia sempre atualizar o mesmo doc em vez de criar outro.
+  docIdFor(date, consultoraNome) {
+    const slug = consultoraNome
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+    return `${date}_${slug}`;
   },
 
   async importUnit(unit) {
     const wb = unit === 'franco' ? this.francoWorkbook : this.moratoWorkbook;
     if (!wb) { Utils.toast('Selecione um arquivo primeiro.', 'error'); return; }
 
-    if (!Auth.isAdmin() && unit === 'morato') {
-      // Non-admins can only import their own data
-    }
-
     const modo = document.getElementById('import-modo').value;
     const targetDate = document.getElementById('import-data').value;
     const targetSheetName = document.getElementById('import-mes-nome').value;
-    const unidade = unit === 'franco' ? 'Franco da Rocha' : 'Francisco Morato';
 
     if (modo === 'dia' && !targetDate) {
       Utils.toast('Selecione uma data para importar.', 'error'); return;
@@ -164,17 +175,24 @@ const Importar = {
       return;
     }
 
-    const records = toImport.map(r => this.rowToRecord(r, unidade)).filter(Boolean);
+    const rawRows = toImport.map(r => this.rowToRaw(r)).filter(Boolean);
+    const aggregated = this.aggregateByDayConsultant(rawRows);
+
+    const totalMat = aggregated.reduce((s, a) => s + a.mat, 0);
+    const totalVal = aggregated.reduce((s, a) => s + a.val, 0);
+    const unidadeLabel = unit === 'franco' ? 'Franco da Rocha' : 'Francisco Morato';
 
     Utils.confirmAction(
       'Confirmar Importação',
-      `Importar ${records.length} registro(s) de "${sheetName}" para ${unidade}?`,
-      records.length,
-      () => this.doImport(records, unit)
+      `Importar/atualizar ${aggregated.length} dia(s)-consultora de "${sheetName}" para ${unidadeLabel}? ` +
+      `Total: ${totalMat} matrícula(s) — ${Utils.formatCurrency(totalVal)}. ` +
+      `Isso substitui os valores de ${unit === 'franco' ? 'Franco' : 'Morato'} já gravados nesses dias (não duplica).`,
+      aggregated.length,
+      () => this.doImport(aggregated, unit)
     );
   },
 
-  async doImport(records, unit) {
+  async doImport(aggregated, unit) {
     const progressEl = document.getElementById(`${unit}-progress`);
     const fillEl = document.getElementById(`${unit}-progress-fill`);
     const textEl = document.getElementById(`${unit}-progress-text`);
@@ -183,23 +201,33 @@ const Importar = {
     document.getElementById(`btn-import-${unit}`).disabled = true;
 
     let done = 0;
-    const batchSize = 500;
+    const batchSize = 400; // cada item grava 3 campos + merge; margem de segurança sob o limite de 500 do Firestore
 
-    for (let i = 0; i < records.length; i += batchSize) {
-      const chunk = records.slice(i, i + batchSize);
+    for (let i = 0; i < aggregated.length; i += batchSize) {
+      const chunk = aggregated.slice(i, i + batchSize);
       const batch = db.batch();
-      chunk.forEach(r => {
-        const ref = db.collection('reports').doc();
-        batch.set(ref, r);
+      chunk.forEach(a => {
+        const id = this.docIdFor(a.date, a.consultoraNome);
+        const ref = db.collection('reports').doc(id);
+        // merge:true + chaves com ponto = atualiza SÓ mat/val da unidade importada,
+        // sem apagar lr/la/bal/ind nem os dados da outra unidade já gravados nesse dia/consultora.
+        batch.set(ref, {
+          date: a.date,
+          consultant: a.consultoraNome,
+          consultoraNome: a.consultoraNome,
+          [`${unit}.mat`]: a.mat,
+          [`${unit}.val`]: a.val,
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
       });
       await batch.commit();
       done += chunk.length;
-      const pct = Math.round((done / records.length) * 100);
+      const pct = Math.round((done / aggregated.length) * 100);
       fillEl.style.width = pct + '%';
-      textEl.textContent = `${pct}% — ${done}/${records.length}`;
+      textEl.textContent = `${pct}% — ${done}/${aggregated.length}`;
     }
 
-    Utils.toast(`✅ ${records.length} registro(s) importados com sucesso!`, 'success');
+    Utils.toast(`✅ ${aggregated.length} dia(s)-consultora sincronizados com sucesso!`, 'success');
     document.getElementById(`btn-import-${unit}`).disabled = false;
 
     // Reload current page if it's vendas or dashboard

@@ -196,6 +196,7 @@ const Utils = {
       'alecia': 'Alecia',
       'alécia': 'Alecia',
       'fernanda': 'Fernanda',
+      'alessandra': 'Alessandra',
     };
     for (const [k, v] of Object.entries(map)) {
       if (s.includes(k)) return v;
@@ -210,6 +211,7 @@ const Utils = {
       'Jaqueline': 'jaqueline',
       'Alecia': 'alecia',
       'Fernanda': 'fernanda',
+      'Alessandra': 'alessandra',
     };
     return map[name] || name.toLowerCase().replace(/\s+/g, '.');
   }
