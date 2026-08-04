@@ -128,9 +128,10 @@ const Importar = {
     return { dataRows, headerRow };
   },
 
-  // Descobre em qual coluna cada tipo (M, RC, RN, PT, AP, AD) está, lendo os nomes reais
-  // do cabeçalho — planilhas diferentes (Franco vs Morato) podem ter colunas em posições
-  // diferentes (uma tem "PT", a outra não), então não dá pra assumir índice fixo.
+  // Descobre em qual coluna cada tipo (M, RC, RN, PT, AP, AD) e cada campo de leads
+  // (LEADS HOJE, LEADS ANT., BALCÃO) está, lendo os nomes reais do cabeçalho — planilhas
+  // diferentes (Franco vs Morato) podem ter colunas em posições diferentes, então não dá
+  // pra assumir índice fixo.
   buildTypeColumnMap(headerRow) {
     const map = {};
     const wanted = ['M', 'RC', 'RN', 'PT', 'AP', 'AD'];
@@ -139,6 +140,17 @@ const Importar = {
       if (wanted.includes(label) && map[label] === undefined) {
         map[label] = idx;
       }
+    });
+
+    // Colunas de leads: nomes variam um pouco (acento, ponto no final), então casa por prefixo
+    // depois de normalizar (sem acento, maiúsculo, sem ponto).
+    const foldHeader = s => String(s || '').trim().toUpperCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\.$/, '');
+    headerRow.forEach((cell, idx) => {
+      const label = foldHeader(cell);
+      if (map.LR === undefined && label.startsWith('LEADS HOJE')) map.LR = idx;
+      if (map.LA === undefined && label.startsWith('LEADS ANT')) map.LA = idx;
+      if (map.BAL === undefined && label.startsWith('BALCAO')) map.BAL = idx;
     });
     return map;
   },
@@ -163,22 +175,42 @@ const Importar = {
     // Matrícula = M (matrícula nova) + AD (adição de categoria) somados juntos, por decisão do Patrik
     const isMatricula = isM || isAD;
 
-    return { date: dateStr, consultoraNome, valor, isMatricula };
+    // Leads Hoje / Leads Antigos / Balcão são preenchidos uma vez por dia (não por venda) —
+    // aqui só lemos o valor bruto da linha; a soma/máximo por dia acontece na agregação.
+    const parseLeadNum = idx => {
+      if (idx === undefined) return undefined;
+      const v = row[idx];
+      if (v === '' || v === null || v === undefined) return undefined;
+      const n = parseInt(String(v).replace(/[^\d-]/g, ''), 10);
+      return isNaN(n) ? undefined : n;
+    };
+    const lr = parseLeadNum(colMap.LR);
+    const la = parseLeadNum(colMap.LA);
+    const bal = parseLeadNum(colMap.BAL);
+
+    return { date: dateStr, consultoraNome, valor, isMatricula, lr, la, bal };
   },
 
   // Agrupa as vendas por dia + consultora — é essa combinação que vira UM documento
   // no Firestore (mesma estrutura usada pelo Registro de Vendas manual: reports.franco / reports.morato = { mat, val }).
   // "mat" = quantidade de linhas marcadas como "M" (matrícula); "val" = soma de TODAS as vendas do dia (todos os tipos), igual ao "Total DE $" da planilha.
+  // Agrupa as vendas por dia + consultora — é essa combinação que vira UM documento
+  // no Firestore (mesma estrutura usada pelo Registro de Vendas manual: reports.franco / reports.morato = { mat, val, lr, la, bal }).
+  // "mat" = quantidade de linhas marcadas como "M" (matrícula); "val" = soma de TODAS as vendas do dia (todos os tipos), igual ao "Total DE $" da planilha.
+  // "lr"/"la"/"bal" = leads/balcão do dia — não somam entre linhas (é um número por dia, não por venda), usa o maior valor encontrado.
   aggregateByDayConsultant(rawRows) {
     const map = new Map();
     rawRows.forEach(r => {
       const key = `${r.date}__${r.consultoraNome}`;
       if (!map.has(key)) {
-        map.set(key, { date: r.date, consultoraNome: r.consultoraNome, mat: 0, val: 0 });
+        map.set(key, { date: r.date, consultoraNome: r.consultoraNome, mat: 0, val: 0, lr: undefined, la: undefined, bal: undefined });
       }
       const entry = map.get(key);
       entry.val += r.valor;
       if (r.isMatricula) entry.mat += 1;
+      if (r.lr !== undefined) entry.lr = Math.max(entry.lr ?? 0, r.lr);
+      if (r.la !== undefined) entry.la = Math.max(entry.la ?? 0, r.la);
+      if (r.bal !== undefined) entry.bal = Math.max(entry.bal ?? 0, r.bal);
     });
     return [...map.values()];
   },
@@ -283,10 +315,14 @@ const Importar = {
       const batch = db.batch();
       chunk.forEach((a, idx) => {
         const existing = snaps[idx].exists ? snaps[idx].data() : {};
+        const prevUnit = existing[unit] || {};
         const unitData = {
-          ...(existing[unit] || {}),
+          ...prevUnit,
           mat: a.mat,
-          val: a.val
+          val: a.val,
+          lr:  a.lr  !== undefined ? a.lr  : (prevUnit.lr  ?? 0),
+          la:  a.la  !== undefined ? a.la  : (prevUnit.la  ?? 0),
+          bal: a.bal !== undefined ? a.bal : (prevUnit.bal ?? 0)
         };
         batch.set(refs[idx], {
           date: a.date,
